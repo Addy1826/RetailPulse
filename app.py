@@ -117,7 +117,7 @@ cat_rev = get_category_revenue()
 
 with col1:
     fig_pie = px.pie(
-        cat_rev, values="revenue", names="category_name",
+        cat_rev, values="revenue", names="category",
         title="Revenue by Category", hole=0.45,
         color_discrete_sequence=px.colors.sequential.Plasma_r,
     )
@@ -130,7 +130,7 @@ with col1:
 with col2:
     fig_bar = px.bar(
         cat_rev.sort_values("units_sold", ascending=True),
-        x="units_sold", y="category_name", orientation="h",
+        x="units_sold", y="category", orientation="h",
         title="Units Sold by Category",
         color="units_sold", color_continuous_scale="Viridis",
     )

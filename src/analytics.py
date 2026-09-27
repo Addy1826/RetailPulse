@@ -91,6 +91,7 @@ def get_category_revenue():
     return run_query("""
         SELECT
             p.category,
+            p.category                          AS category_name,
             SUM(oi.quantity)                    AS units_sold,
             SUM(oi.quantity * oi.selling_price) AS revenue
         FROM order_items oi
