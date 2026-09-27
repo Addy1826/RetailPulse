@@ -1,76 +1,78 @@
 CREATE DATABASE IF NOT EXISTS retailpulse;
 USE retailpulse;
 
--- Drop tables in reverse order if they exist
+-- Drop tables in reverse dependency order
 DROP TABLE IF EXISTS inventory;
 DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS stores;
 DROP TABLE IF EXISTS Customers;
-DROP TABLE IF EXISTS categories;
 
-create table Customers (
-Customer_Id int primary key,
-Customer_name varchar(100) not null,
-email varchar(150) unique,
-city varchar (50) ,
-signup_date date );
-
-Create  table stores( 
-store_id int primary key,
-store_name varchar(100) not null,
-city varchar(50) not null,
-openinig_date DATE
+CREATE TABLE Customers (
+    Customer_Id INT PRIMARY KEY,
+    Customer_name VARCHAR(100) NOT NULL,
+    email VARCHAR(150) UNIQUE,
+    city VARCHAR(50),
+    signup_date DATE
 );
 
-create table products (
-product_id int primary key,
-product_name varchar(120) not null,
-category varchar(50) not null,
-Unit_price decimal (10,2) check( Unit_price > 0),
-recorder_level int default 10);
+CREATE TABLE stores (
+    store_id INT PRIMARY KEY,
+    store_name VARCHAR(100) NOT NULL,
+    city VARCHAR(50) NOT NULL,
+    opening_date DATE
+);
 
-create table orders ( 
-order_id int primary key,
-Customer_id int ,
-store_id int,
-Order_date DATE not null,
-payment_method Varchar(30),
-order_status varchar (30),
-foreign key (Customer_id)
-references
-Customers (Customer_id),
-foreign key (store_id)
-references Stores(store_id));
+CREATE TABLE products (
+    product_id INT PRIMARY KEY,
+    product_name VARCHAR(120) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    Unit_price DECIMAL(10,2) CHECK (Unit_price > 0),
+    reorder_level INT DEFAULT 10
+);
 
-create table order_items(
-order_id int ,
-product_id int,
-quantity int check (quantity > 0),
-selling_price decimal (10,2) check (selling_price > 0),
+CREATE TABLE orders (
+    order_id INT PRIMARY KEY,
+    Customer_id INT NOT NULL,
+    store_id INT NOT NULL,
+    Order_date DATE NOT NULL,
+    payment_method VARCHAR(30),
+    order_status VARCHAR(30),
 
-foreign key (order_id)
-references orders (order_id),
+    FOREIGN KEY (Customer_id)
+        REFERENCES Customers(Customer_Id),
 
-foreign key (product_id)
-references products(product_id),
+    FOREIGN KEY (store_id)
+        REFERENCES stores(store_id)
+);
 
-primary key (order_id,Product_id));
+CREATE TABLE order_items (
+    order_id INT,
+    product_id INT,
+    quantity INT CHECK (quantity > 0),
+    selling_price DECIMAL(10,2) CHECK (selling_price > 0),
 
-create table inventory(
-store_id int,
-product_id int,
-stock_quantity int check(stock_quantity>=0),
-last_updated date ,
+    PRIMARY KEY (order_id, product_id),
 
-foreign key (store_id)
-references stores (store_id),
+    FOREIGN KEY (order_id)
+        REFERENCES orders(order_id),
 
-foreign key (Product_id)
-references
-products(product_id));
+    FOREIGN KEY (product_id)
+        REFERENCES products(product_id)
+);
 
-alter table inventory
-add
-primary key (store_id,Product_id);
+CREATE TABLE inventory (
+    store_id INT,
+    product_id INT,
+    stock_quantity INT CHECK (stock_quantity >= 0),
+    last_updated DATE,
+
+    PRIMARY KEY (store_id, product_id),
+
+    FOREIGN KEY (store_id)
+        REFERENCES stores(store_id),
+
+    FOREIGN KEY (product_id)
+        REFERENCES products(product_id)
+);

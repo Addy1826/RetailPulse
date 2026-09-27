@@ -7,13 +7,13 @@ from src.database import run_query
 # --- Summary KPIs ---
 
 def get_revenue_kpis():
-    """Get overall sales KPIs."""
+    """Get overall sales KPIs with true Average Order Value (total revenue / completed orders)."""
     df = run_query("""
         SELECT
-            COUNT(DISTINCT o.order_id)          AS total_orders,
-            SUM(oi.quantity * oi.selling_price) AS total_revenue,
-            AVG(oi.quantity * oi.selling_price) AS avg_order_value,
-            COUNT(DISTINCT o.Customer_id)       AS unique_customers
+            COUNT(DISTINCT o.order_id)                                                  AS total_orders,
+            SUM(oi.quantity * oi.selling_price)                                         AS total_revenue,
+            SUM(oi.quantity * oi.selling_price) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS avg_order_value,
+            COUNT(DISTINCT o.Customer_id)                                               AS unique_customers
         FROM orders o
         INNER JOIN order_items oi ON o.order_id = oi.order_id
         WHERE o.order_status = 'Completed'
@@ -69,7 +69,7 @@ def get_daily_patterns():
 # --- Product analytics ---
 
 def get_top_products(limit=10):
-    """Top selling products by revenue."""
+    """Top products by revenue."""
     return run_query(f"""
         SELECT
             p.product_name,
@@ -104,14 +104,15 @@ def get_category_revenue():
 
 
 def get_profit_margins(limit=10):
-    """Product profit analysis comparing selling price to cost."""
+    """Estimated gross margin analysis comparing selling price to baseline unit price."""
     return run_query(f"""
         SELECT
             p.product_name,
             p.category,
             SUM(oi.quantity)                    AS units_sold,
-            SUM(oi.quantity * oi.selling_price) AS revenue,
-            SUM(oi.quantity * p.Unit_price)     AS total_cost,
+            SUM(oi.quantity * oi.selling_price) AS total_revenue,
+            SUM(oi.quantity * p.Unit_price)     AS estimated_cost,
+            SUM(oi.quantity * oi.selling_price) - SUM(oi.quantity * p.Unit_price) AS estimated_gross_margin,
             SUM(oi.quantity * oi.selling_price) - SUM(oi.quantity * p.Unit_price) AS profit,
             ((SUM(oi.quantity * oi.selling_price) - SUM(oi.quantity * p.Unit_price)) / SUM(oi.quantity * oi.selling_price)) * 100 AS margin_pct
         FROM order_items oi
@@ -119,9 +120,14 @@ def get_profit_margins(limit=10):
         INNER JOIN orders o ON oi.order_id = o.order_id
         WHERE o.order_status = 'Completed'
         GROUP BY p.product_id, p.product_name, p.category
-        ORDER BY profit DESC
+        ORDER BY estimated_gross_margin DESC
         LIMIT {int(limit)}
     """)
+
+
+def get_gross_margins(limit=10):
+    """Alias for estimated gross margin analysis."""
+    return get_profit_margins(limit=limit)
 
 
 # --- Store analytics ---
@@ -214,22 +220,55 @@ def get_top_customers(limit=10):
     """)
 
 
+def get_repeat_customers(min_orders=6):
+    """Repeat/high-frequency customers with completed orders meeting minimum threshold."""
+    return run_query(f"""
+        SELECT
+            c.Customer_Id,
+            c.Customer_name,
+            c.city,
+            COUNT(DISTINCT o.order_id)          AS completed_orders,
+            SUM(oi.quantity * oi.selling_price) AS total_spent
+        FROM Customers c
+        INNER JOIN orders o ON c.Customer_Id = o.Customer_id
+        INNER JOIN order_items oi ON o.order_id = oi.order_id
+        WHERE o.order_status = 'Completed'
+        GROUP BY c.Customer_Id, c.Customer_name, c.city
+        HAVING COUNT(DISTINCT o.order_id) >= {int(min_orders)}
+        ORDER BY completed_orders DESC, total_spent DESC
+    """)
+
+
+def get_customers_with_no_orders():
+    """Customers with zero orders via LEFT JOIN anti-join."""
+    return run_query("""
+        SELECT
+            c.Customer_Id,
+            c.Customer_name,
+            c.city
+        FROM Customers c
+        LEFT JOIN orders o ON c.Customer_Id = o.Customer_id
+        WHERE o.order_id IS NULL
+        ORDER BY c.Customer_Id
+    """)
+
+
 # --- Inventory analytics ---
 
 def get_low_stock_alerts():
-    """Products where current stock is below recorder level."""
+    """Products where current stock is below reorder level."""
     return run_query("""
         SELECT
             s.store_name,
             p.product_name,
             p.category,
             inv.stock_quantity AS qty_on_hand,
-            p.recorder_level   AS reorder_level,
+            p.reorder_level,
             inv.last_updated
         FROM inventory inv
         INNER JOIN stores s ON inv.store_id = s.store_id
         INNER JOIN products p ON inv.product_id = p.product_id
-        WHERE inv.stock_quantity < p.recorder_level
+        WHERE inv.stock_quantity < p.reorder_level
         ORDER BY inv.stock_quantity ASC
     """)
 
@@ -240,7 +279,7 @@ def get_inventory_summary():
         SELECT
             p.category AS category_name,
             SUM(inv.stock_quantity) AS total_stock,
-            SUM(CASE WHEN inv.stock_quantity < p.recorder_level THEN 1 ELSE 0 END) AS low_stock_count
+            SUM(CASE WHEN inv.stock_quantity < p.reorder_level THEN 1 ELSE 0 END) AS low_stock_count
         FROM inventory inv
         INNER JOIN products p ON inv.product_id = p.product_id
         GROUP BY p.category

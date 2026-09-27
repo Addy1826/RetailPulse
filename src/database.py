@@ -34,6 +34,10 @@ def _sqlite_setup(conn, record):
         # MySQL DAYOFWEEK: 1=Sunday, 2=Monday, ..., 7=Saturday
         return ((pd.to_datetime(val).dayofweek + 1) % 7) + 1
 
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON;")
+    cursor.close()
+
     conn.create_function("DATE_FORMAT", 2, date_format)
     conn.create_function("DAYNAME", 1, dayname)
     conn.create_function("DAYOFWEEK", 1, dayofweek)

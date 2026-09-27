@@ -28,7 +28,7 @@ def clean_stores(df):
             df[col] = df[col].astype(str).str.strip()
 
     df = df.drop_duplicates(subset=["store_id"])
-    df["openinig_date"] = pd.to_datetime(df["openinig_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    df["opening_date"] = pd.to_datetime(df["opening_date"], errors="coerce").dt.strftime("%Y-%m-%d")
     return df.dropna(subset=["store_id", "store_name"])
 
 
@@ -43,7 +43,7 @@ def clean_products(df):
     # Ensure positive unit price
     df["Unit_price"] = pd.to_numeric(df["Unit_price"], errors="coerce")
     df = df[df["Unit_price"] > 0]
-    df["recorder_level"] = df["recorder_level"].fillna(10).astype(int)
+    df["reorder_level"] = df["reorder_level"].fillna(10).astype(int)
     return df.dropna(subset=["product_id", "product_name"])
 
 

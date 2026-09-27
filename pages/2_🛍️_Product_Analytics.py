@@ -13,7 +13,7 @@ from src.analytics import get_profit_margins, get_top_products, get_daily_patter
 st.set_page_config(page_title="Product Analytics", page_icon="🛍️", layout="wide")
 
 st.markdown("# 🛍️ Product Analytics")
-st.markdown("Best sellers, profit margins, and shopping patterns.")
+st.markdown("Top revenue products, estimated gross margins, and shopping patterns.")
 st.markdown("---")
 
 # Top products
@@ -31,13 +31,13 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True)
 
-# Profit margins and daily patterns
+# Estimated gross margins and daily patterns
 col1, col2 = st.columns(2)
 
 margins = get_profit_margins(10)
 
 with col1:
-    st.markdown("### Profit Margins")
+    st.markdown("### Estimated Gross Margin %")
     fig2 = go.Figure(go.Bar(
         x=margins["margin_pct"], y=margins["product_name"],
         orientation="h",

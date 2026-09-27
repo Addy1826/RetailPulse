@@ -27,7 +27,7 @@ CREATE TABLE stores (
     store_id INTEGER PRIMARY KEY,
     store_name TEXT NOT NULL,
     city TEXT NOT NULL,
-    openinig_date TEXT
+    opening_date TEXT
 );
 
 CREATE TABLE products (
@@ -35,13 +35,13 @@ CREATE TABLE products (
     product_name TEXT NOT NULL,
     category TEXT NOT NULL,
     Unit_price REAL CHECK(Unit_price > 0),
-    recorder_level INTEGER DEFAULT 10
+    reorder_level INTEGER DEFAULT 10
 );
 
 CREATE TABLE orders (
     order_id INTEGER PRIMARY KEY,
-    Customer_id INTEGER,
-    store_id INTEGER,
+    Customer_id INTEGER NOT NULL,
+    store_id INTEGER NOT NULL,
     Order_date TEXT NOT NULL,
     payment_method TEXT,
     order_status TEXT,

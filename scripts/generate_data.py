@@ -59,7 +59,7 @@ def generate_stores(n=10):
             "store_id": sid,
             "store_name": name,
             "city": city,
-            "openinig_date": open_date
+            "opening_date": open_date
         })
     return rows
 
@@ -75,7 +75,7 @@ def generate_products():
                 "product_name": item,
                 "category": cat,
                 "Unit_price": unit_price,
-                "recorder_level": random.randint(10, 30)
+                "reorder_level": random.randint(10, 30)
             })
             pid += 1
     return rows
