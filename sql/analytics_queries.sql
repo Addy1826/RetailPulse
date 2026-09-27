@@ -1,179 +1,171 @@
 -- RetailPulse - Analytics Queries
--- Simple queries to analyze sales, products, customers and inventory.
+-- Simple queries to analyze sales, products, customers and inventory
 
 USE retailpulse;
 
 
--- Q1: Overall sales summary
+-- 1. Total sales summary
 SELECT
-    COUNT(DISTINCT o.order_id)    AS total_orders,
-    SUM(oi.line_total)            AS total_revenue,
-    AVG(o.total_amount)           AS avg_order_value,
-    COUNT(DISTINCT o.customer_id) AS unique_customers
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    SUM(oi.quantity * oi.selling_price) AS total_revenue,
+    AVG(oi.quantity * oi.selling_price) AS avg_order_value,
+    COUNT(DISTINCT o.Customer_id) AS unique_customers
 FROM orders o
 INNER JOIN order_items oi ON o.order_id = oi.order_id
-WHERE o.status = 'Completed';
+WHERE o.order_status = 'Completed';
 
 
--- Q2: Monthly revenue
+-- 2. Monthly sales trend
 SELECT
-    DATE_FORMAT(o.order_date, '%Y-%m') AS month,
-    SUM(oi.line_total)                 AS revenue,
-    COUNT(DISTINCT o.order_id)         AS orders
+    DATE_FORMAT(o.Order_date, '%Y-%m') AS month,
+    SUM(oi.quantity * oi.selling_price) AS revenue,
+    COUNT(DISTINCT o.order_id) AS orders
 FROM orders o
 INNER JOIN order_items oi ON o.order_id = oi.order_id
-WHERE o.status = 'Completed'
+WHERE o.order_status = 'Completed'
 GROUP BY month
 ORDER BY month;
 
 
--- Q3: Top 10 best selling products
+-- 3. Top 10 best selling products
 SELECT
     p.product_name,
-    p.brand,
-    c.category_name,
-    SUM(oi.quantity)    AS units_sold,
-    SUM(oi.line_total)  AS revenue
+    p.category,
+    SUM(oi.quantity) AS units_sold,
+    SUM(oi.quantity * oi.selling_price) AS revenue
 FROM order_items oi
-INNER JOIN products p   ON oi.product_id = p.product_id
-INNER JOIN categories c ON p.category_id = c.category_id
-INNER JOIN orders o     ON oi.order_id = o.order_id
-WHERE o.status = 'Completed'
-GROUP BY p.product_id, p.product_name, p.brand, c.category_name
+INNER JOIN products p ON oi.product_id = p.product_id
+INNER JOIN orders o ON oi.order_id = o.order_id
+WHERE o.order_status = 'Completed'
+GROUP BY p.product_id, p.product_name, p.category
 ORDER BY revenue DESC
 LIMIT 10;
 
 
--- Q4: Revenue by category
+-- 4. Revenue by category
 SELECT
-    c.category_name,
-    SUM(oi.quantity)   AS units_sold,
-    SUM(oi.line_total) AS revenue
+    p.category,
+    SUM(oi.quantity) AS units_sold,
+    SUM(oi.quantity * oi.selling_price) AS revenue
 FROM order_items oi
-INNER JOIN products p   ON oi.product_id = p.product_id
-INNER JOIN categories c ON p.category_id = c.category_id
-INNER JOIN orders o     ON oi.order_id = o.order_id
-WHERE o.status = 'Completed'
-GROUP BY c.category_name
+INNER JOIN products p ON oi.product_id = p.product_id
+INNER JOIN orders o ON oi.order_id = o.order_id
+WHERE o.order_status = 'Completed'
+GROUP BY p.category
 ORDER BY revenue DESC;
 
 
--- Q5: Revenue by store region
+-- 5. Revenue by store
 SELECT
-    s.region,
+    s.store_name,
+    s.city,
     COUNT(DISTINCT o.order_id) AS orders,
-    SUM(oi.line_total)         AS revenue
+    SUM(oi.quantity * oi.selling_price) AS revenue
 FROM orders o
-INNER JOIN stores s      ON o.store_id = s.store_id
+INNER JOIN stores s ON o.store_id = s.store_id
 INNER JOIN order_items oi ON o.order_id = oi.order_id
-WHERE o.status = 'Completed'
-GROUP BY s.region
+WHERE o.order_status = 'Completed'
+GROUP BY s.store_id, s.store_name, s.city
 ORDER BY revenue DESC;
 
 
--- Q6: Customer segments - how much each segment spends
+-- 6. Customer sales by city
 SELECT
-    cu.segment,
-    COUNT(DISTINCT cu.customer_id) AS customers,
-    COUNT(DISTINCT o.order_id)     AS orders,
-    SUM(oi.line_total)             AS revenue,
-    SUM(oi.line_total) / COUNT(DISTINCT cu.customer_id) AS revenue_per_customer
-FROM customers cu
-INNER JOIN orders o      ON cu.customer_id = o.customer_id
+    c.city,
+    COUNT(DISTINCT c.Customer_Id) AS total_customers,
+    COUNT(DISTINCT o.order_id) AS orders,
+    SUM(oi.quantity * oi.selling_price) AS revenue
+FROM Customers c
+INNER JOIN orders o ON c.Customer_Id = o.Customer_id
 INNER JOIN order_items oi ON o.order_id = oi.order_id
-WHERE o.status = 'Completed'
-GROUP BY cu.segment
+WHERE o.order_status = 'Completed'
+GROUP BY c.city
 ORDER BY revenue DESC;
 
 
--- Q7: Payment method breakdown
+-- 7. Payment method distribution
 SELECT
     o.payment_method,
-    COUNT(*)           AS order_count,
-    SUM(o.total_amount) AS total_amount
+    COUNT(DISTINCT o.order_id) AS order_count,
+    SUM(oi.quantity * oi.selling_price) AS total_amount
 FROM orders o
-WHERE o.status = 'Completed'
+INNER JOIN order_items oi ON o.order_id = oi.order_id
+WHERE o.order_status = 'Completed'
 GROUP BY o.payment_method
 ORDER BY total_amount DESC;
 
 
--- Q8: Top 10 customers by total spending
+-- 8. Top 10 spending customers
 SELECT
-    cu.customer_id,
-    CONCAT(cu.first_name, ' ', cu.last_name) AS customer_name,
-    cu.segment,
-    cu.city,
+    c.Customer_Id,
+    c.Customer_name,
+    c.city,
     COUNT(DISTINCT o.order_id) AS total_orders,
-    SUM(oi.line_total)         AS lifetime_value
-FROM customers cu
-INNER JOIN orders o      ON cu.customer_id = o.customer_id
+    SUM(oi.quantity * oi.selling_price) AS total_spent
+FROM Customers c
+INNER JOIN orders o ON c.Customer_Id = o.Customer_id
 INNER JOIN order_items oi ON o.order_id = oi.order_id
-WHERE o.status = 'Completed'
-GROUP BY cu.customer_id, customer_name, cu.segment, cu.city
-ORDER BY lifetime_value DESC
+WHERE o.order_status = 'Completed'
+GROUP BY c.Customer_Id, c.Customer_name, c.city
+ORDER BY total_spent DESC
 LIMIT 10;
 
 
--- Q9: Products that are running low on stock
+-- 9. Low stock inventory alerts
 SELECT
     s.store_name,
     p.product_name,
-    p.sku,
-    inv.qty_on_hand,
-    inv.reorder_level,
-    inv.last_restock
+    p.category,
+    inv.stock_quantity,
+    p.recorder_level,
+    inv.last_updated
 FROM inventory inv
-INNER JOIN stores s   ON inv.store_id = s.store_id
+INNER JOIN stores s ON inv.store_id = s.store_id
 INNER JOIN products p ON inv.product_id = p.product_id
-WHERE inv.qty_on_hand < inv.reorder_level
-ORDER BY inv.qty_on_hand ASC;
+WHERE inv.stock_quantity < p.recorder_level
+ORDER BY inv.stock_quantity ASC;
 
 
--- Q10: Store performance - which stores make the most money
+-- 10. Store performance leaderboard
 SELECT
     s.store_name,
     s.city,
-    s.region,
-    s.store_type,
-    COUNT(DISTINCT o.order_id)    AS total_orders,
-    SUM(oi.line_total)            AS revenue,
-    COUNT(DISTINCT o.customer_id) AS unique_customers
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    SUM(oi.quantity * oi.selling_price) AS revenue,
+    COUNT(DISTINCT o.Customer_id) AS unique_customers
 FROM stores s
-INNER JOIN orders o      ON s.store_id = o.store_id
+INNER JOIN orders o ON s.store_id = o.store_id
 INNER JOIN order_items oi ON o.order_id = oi.order_id
-WHERE o.status = 'Completed'
-GROUP BY s.store_id, s.store_name, s.city, s.region, s.store_type
+WHERE o.order_status = 'Completed'
+GROUP BY s.store_id, s.store_name, s.city
 ORDER BY revenue DESC;
 
 
--- Q11: Most profitable products (revenue minus cost)
+-- 11. Most profitable products
 SELECT
     p.product_name,
-    p.brand,
-    c.category_name,
-    SUM(oi.quantity)                                       AS units_sold,
-    SUM(oi.line_total)                                     AS revenue,
-    SUM(oi.quantity * p.cost_price)                         AS total_cost,
-    SUM(oi.line_total) - SUM(oi.quantity * p.cost_price)   AS gross_profit
+    p.category,
+    SUM(oi.quantity) AS units_sold,
+    SUM(oi.quantity * oi.selling_price) AS total_revenue,
+    SUM(oi.quantity * p.Unit_price) AS total_cost,
+    SUM(oi.quantity * oi.selling_price) - SUM(oi.quantity * p.Unit_price) AS profit
 FROM order_items oi
-INNER JOIN products p   ON oi.product_id = p.product_id
-INNER JOIN categories c ON p.category_id = c.category_id
-INNER JOIN orders o     ON oi.order_id = o.order_id
-WHERE o.status = 'Completed'
-GROUP BY p.product_id, p.product_name, p.brand, c.category_name
-HAVING SUM(oi.line_total) > 0
-ORDER BY gross_profit DESC
+INNER JOIN products p ON oi.product_id = p.product_id
+INNER JOIN orders o ON oi.order_id = o.order_id
+WHERE o.order_status = 'Completed'
+GROUP BY p.product_id, p.product_name, p.category
+ORDER BY profit DESC
 LIMIT 10;
 
 
--- Q12: Orders by day of the week
+-- 12. Day of week shopping patterns
 SELECT
-    DAYNAME(o.order_date)          AS day_name,
-    DAYOFWEEK(o.order_date)        AS day_num,
-    COUNT(DISTINCT o.order_id)     AS orders,
-    SUM(oi.line_total)             AS revenue
+    DAYNAME(o.Order_date) AS day_name,
+    DAYOFWEEK(o.Order_date) AS day_num,
+    COUNT(DISTINCT o.order_id) AS orders,
+    SUM(oi.quantity * oi.selling_price) AS revenue
 FROM orders o
 INNER JOIN order_items oi ON o.order_id = oi.order_id
-WHERE o.status = 'Completed'
+WHERE o.order_status = 'Completed'
 GROUP BY day_name, day_num
 ORDER BY day_num;

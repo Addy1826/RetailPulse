@@ -1,32 +1,34 @@
-# analytics.py - Functions that query MySQL and return DataFrames for the dashboard
+# analytics.py - Functions that query the database and return DataFrames for the dashboard
 
 import pandas as pd
 from src.database import run_query
 
 
-# --- KPI functions ---
+# --- Summary KPIs ---
 
 def get_revenue_kpis():
-    """Get the main sales numbers."""
+    """Get overall sales KPIs."""
     df = run_query("""
         SELECT
-            COUNT(DISTINCT o.order_id)    AS total_orders,
-            SUM(oi.line_total)            AS total_revenue,
-            AVG(o.total_amount)           AS avg_order_value,
-            COUNT(DISTINCT o.customer_id) AS unique_customers
+            COUNT(DISTINCT o.order_id)          AS total_orders,
+            SUM(oi.quantity * oi.selling_price) AS total_revenue,
+            AVG(oi.quantity * oi.selling_price) AS avg_order_value,
+            COUNT(DISTINCT o.Customer_id)       AS unique_customers
         FROM orders o
         INNER JOIN order_items oi ON o.order_id = oi.order_id
-        WHERE o.status = 'Completed'
+        WHERE o.order_status = 'Completed'
     """)
     return df.iloc[0].to_dict()
 
 
 def get_total_products():
-    df = run_query("SELECT COUNT(*) AS cnt FROM products WHERE is_active = 1")
+    """Count of total products in catalog."""
+    df = run_query("SELECT COUNT(*) AS cnt FROM products")
     return int(df["cnt"].iloc[0])
 
 
 def get_total_stores():
+    """Count of total retail stores."""
     df = run_query("SELECT COUNT(*) AS cnt FROM stores")
     return int(df["cnt"].iloc[0])
 
@@ -34,29 +36,31 @@ def get_total_stores():
 # --- Trends ---
 
 def get_monthly_revenue():
+    """Monthly revenue and order volume trend."""
     return run_query("""
         SELECT
-            DATE_FORMAT(o.order_date, '%%Y-%%m') AS month,
-            SUM(oi.line_total)                   AS revenue,
-            COUNT(DISTINCT o.order_id)           AS orders
+            DATE_FORMAT(o.Order_date, '%Y-%m')  AS month,
+            SUM(oi.quantity * oi.selling_price) AS revenue,
+            COUNT(DISTINCT o.order_id)          AS orders
         FROM orders o
         INNER JOIN order_items oi ON o.order_id = oi.order_id
-        WHERE o.status = 'Completed'
+        WHERE o.order_status = 'Completed'
         GROUP BY month
         ORDER BY month
     """)
 
 
 def get_daily_patterns():
+    """Sales by day of the week."""
     return run_query("""
         SELECT
-            DAYNAME(o.order_date)      AS day_name,
-            DAYOFWEEK(o.order_date)    AS day_num,
-            COUNT(DISTINCT o.order_id) AS orders,
-            SUM(oi.line_total)         AS revenue
+            DAYNAME(o.Order_date)               AS day_name,
+            DAYOFWEEK(o.Order_date)             AS day_num,
+            COUNT(DISTINCT o.order_id)          AS orders,
+            SUM(oi.quantity * oi.selling_price) AS revenue
         FROM orders o
         INNER JOIN order_items oi ON o.order_id = oi.order_id
-        WHERE o.status = 'Completed'
+        WHERE o.order_status = 'Completed'
         GROUP BY day_name, day_num
         ORDER BY day_num
     """)
@@ -65,89 +69,92 @@ def get_daily_patterns():
 # --- Product analytics ---
 
 def get_top_products(limit=10):
+    """Top selling products by revenue."""
     return run_query(f"""
         SELECT
-            p.product_name, p.brand, c.category_name,
-            SUM(oi.quantity)   AS units_sold,
-            SUM(oi.line_total) AS revenue
+            p.product_name,
+            p.category,
+            SUM(oi.quantity)                    AS units_sold,
+            SUM(oi.quantity * oi.selling_price) AS revenue
         FROM order_items oi
-        INNER JOIN products p   ON oi.product_id = p.product_id
-        INNER JOIN categories c ON p.category_id = c.category_id
-        INNER JOIN orders o     ON oi.order_id = o.order_id
-        WHERE o.status = 'Completed'
-        GROUP BY p.product_id, p.product_name, p.brand, c.category_name
+        INNER JOIN products p ON oi.product_id = p.product_id
+        INNER JOIN orders o ON oi.order_id = o.order_id
+        WHERE o.order_status = 'Completed'
+        GROUP BY p.product_id, p.product_name, p.category
         ORDER BY revenue DESC
         LIMIT {int(limit)}
     """)
 
 
 def get_category_revenue():
+    """Revenue breakdown by product category."""
     return run_query("""
         SELECT
-            c.category_name,
-            SUM(oi.quantity)   AS units_sold,
-            SUM(oi.line_total) AS revenue
+            p.category,
+            SUM(oi.quantity)                    AS units_sold,
+            SUM(oi.quantity * oi.selling_price) AS revenue
         FROM order_items oi
-        INNER JOIN products p   ON oi.product_id = p.product_id
-        INNER JOIN categories c ON p.category_id = c.category_id
-        INNER JOIN orders o     ON oi.order_id = o.order_id
-        WHERE o.status = 'Completed'
-        GROUP BY c.category_name
+        INNER JOIN products p ON oi.product_id = p.product_id
+        INNER JOIN orders o ON oi.order_id = o.order_id
+        WHERE o.order_status = 'Completed'
+        GROUP BY p.category
         ORDER BY revenue DESC
     """)
 
 
 def get_profit_margins(limit=10):
+    """Product profit analysis comparing selling price to cost."""
     return run_query(f"""
         SELECT
-            p.product_name, p.brand, c.category_name,
-            SUM(oi.quantity)                                     AS units_sold,
-            SUM(oi.line_total)                                   AS revenue,
-            SUM(oi.quantity * p.cost_price)                       AS total_cost,
-            SUM(oi.line_total) - SUM(oi.quantity * p.cost_price) AS gross_profit,
-            (SUM(oi.line_total) - SUM(oi.quantity * p.cost_price))
-                / SUM(oi.line_total) * 100                       AS margin_pct
+            p.product_name,
+            p.category,
+            SUM(oi.quantity)                    AS units_sold,
+            SUM(oi.quantity * oi.selling_price) AS revenue,
+            SUM(oi.quantity * p.Unit_price)     AS total_cost,
+            SUM(oi.quantity * oi.selling_price) - SUM(oi.quantity * p.Unit_price) AS profit,
+            ((SUM(oi.quantity * oi.selling_price) - SUM(oi.quantity * p.Unit_price)) / SUM(oi.quantity * oi.selling_price)) * 100 AS margin_pct
         FROM order_items oi
-        INNER JOIN products p   ON oi.product_id = p.product_id
-        INNER JOIN categories c ON p.category_id = c.category_id
-        INNER JOIN orders o     ON oi.order_id = o.order_id
-        WHERE o.status = 'Completed'
-        GROUP BY p.product_id, p.product_name, p.brand, c.category_name
-        HAVING SUM(oi.line_total) > 0
-        ORDER BY gross_profit DESC
+        INNER JOIN products p ON oi.product_id = p.product_id
+        INNER JOIN orders o ON oi.order_id = o.order_id
+        WHERE o.order_status = 'Completed'
+        GROUP BY p.product_id, p.product_name, p.category
+        ORDER BY profit DESC
         LIMIT {int(limit)}
     """)
 
 
 # --- Store analytics ---
 
-def get_region_revenue():
+def get_store_performance():
+    """Store leaderboard by revenue."""
     return run_query("""
         SELECT
-            s.region,
-            COUNT(DISTINCT o.order_id) AS orders,
-            SUM(oi.line_total)         AS revenue
-        FROM orders o
-        INNER JOIN stores s       ON o.store_id = s.store_id
+            s.store_name,
+            s.city,
+            COUNT(DISTINCT o.order_id)          AS total_orders,
+            SUM(oi.quantity * oi.selling_price) AS revenue,
+            COUNT(DISTINCT o.Customer_id)       AS unique_customers
+        FROM stores s
+        INNER JOIN orders o ON s.store_id = o.store_id
         INNER JOIN order_items oi ON o.order_id = oi.order_id
-        WHERE o.status = 'Completed'
-        GROUP BY s.region
+        WHERE o.order_status = 'Completed'
+        GROUP BY s.store_id, s.store_name, s.city
         ORDER BY revenue DESC
     """)
 
 
-def get_store_performance():
+def get_region_revenue():
+    """Sales by store city/region."""
     return run_query("""
         SELECT
-            s.store_name, s.city, s.region, s.store_type,
-            COUNT(DISTINCT o.order_id)    AS total_orders,
-            SUM(oi.line_total)            AS revenue,
-            COUNT(DISTINCT o.customer_id) AS unique_customers
-        FROM stores s
-        INNER JOIN orders o       ON s.store_id = o.store_id
+            s.city AS region,
+            COUNT(DISTINCT o.order_id)          AS orders,
+            SUM(oi.quantity * oi.selling_price) AS revenue
+        FROM orders o
+        INNER JOIN stores s ON o.store_id = s.store_id
         INNER JOIN order_items oi ON o.order_id = oi.order_id
-        WHERE o.status = 'Completed'
-        GROUP BY s.store_id, s.store_name, s.city, s.region, s.store_type
+        WHERE o.order_status = 'Completed'
+        GROUP BY s.city
         ORDER BY revenue DESC
     """)
 
@@ -155,79 +162,86 @@ def get_store_performance():
 # --- Customer analytics ---
 
 def get_customer_segments():
+    """Customer spending by city."""
     return run_query("""
         SELECT
-            cu.segment,
-            COUNT(DISTINCT cu.customer_id) AS customers,
-            COUNT(DISTINCT o.order_id)     AS orders,
-            SUM(oi.line_total)             AS revenue,
-            SUM(oi.line_total) / COUNT(DISTINCT cu.customer_id) AS revenue_per_customer
-        FROM customers cu
-        INNER JOIN orders o       ON cu.customer_id = o.customer_id
+            c.city AS segment,
+            COUNT(DISTINCT c.Customer_Id)       AS customers,
+            COUNT(DISTINCT o.order_id)          AS orders,
+            SUM(oi.quantity * oi.selling_price) AS revenue,
+            SUM(oi.quantity * oi.selling_price) / COUNT(DISTINCT c.Customer_Id) AS revenue_per_customer
+        FROM Customers c
+        INNER JOIN orders o ON c.Customer_Id = o.Customer_id
         INNER JOIN order_items oi ON o.order_id = oi.order_id
-        WHERE o.status = 'Completed'
-        GROUP BY cu.segment
+        WHERE o.order_status = 'Completed'
+        GROUP BY c.city
         ORDER BY revenue DESC
     """)
 
 
-def get_top_customers(limit=10):
-    return run_query(f"""
-        SELECT
-            cu.customer_id,
-            CONCAT(cu.first_name, ' ', cu.last_name) AS customer_name,
-            cu.segment, cu.city,
-            COUNT(DISTINCT o.order_id) AS total_orders,
-            SUM(oi.line_total)         AS lifetime_value
-        FROM customers cu
-        INNER JOIN orders o       ON cu.customer_id = o.customer_id
-        INNER JOIN order_items oi ON o.order_id = oi.order_id
-        WHERE o.status = 'Completed'
-        GROUP BY cu.customer_id, customer_name, cu.segment, cu.city
-        ORDER BY lifetime_value DESC
-        LIMIT {int(limit)}
-    """)
-
-
 def get_payment_methods():
+    """Distribution of payment methods."""
     return run_query("""
         SELECT
             o.payment_method,
-            COUNT(*)            AS order_count,
-            SUM(o.total_amount) AS total_amount
+            COUNT(DISTINCT o.order_id)          AS order_count,
+            SUM(oi.quantity * oi.selling_price) AS total_amount
         FROM orders o
-        WHERE o.status = 'Completed'
+        INNER JOIN order_items oi ON o.order_id = oi.order_id
+        WHERE o.order_status = 'Completed'
         GROUP BY o.payment_method
         ORDER BY total_amount DESC
     """)
 
 
-# --- Inventory ---
+def get_top_customers(limit=10):
+    """Top customers by spending."""
+    return run_query(f"""
+        SELECT
+            c.Customer_Id,
+            c.Customer_name,
+            c.city,
+            COUNT(DISTINCT o.order_id)          AS total_orders,
+            SUM(oi.quantity * oi.selling_price) AS lifetime_value
+        FROM Customers c
+        INNER JOIN orders o ON c.Customer_Id = o.Customer_id
+        INNER JOIN order_items oi ON o.order_id = oi.order_id
+        WHERE o.order_status = 'Completed'
+        GROUP BY c.Customer_Id, c.Customer_name, c.city
+        ORDER BY lifetime_value DESC
+        LIMIT {int(limit)}
+    """)
+
+
+# --- Inventory analytics ---
 
 def get_low_stock_alerts():
+    """Products where current stock is below recorder level."""
     return run_query("""
         SELECT
             s.store_name,
-            p.product_name, p.sku,
-            inv.qty_on_hand, inv.reorder_level, inv.last_restock
+            p.product_name,
+            p.category,
+            inv.stock_quantity AS qty_on_hand,
+            p.recorder_level   AS reorder_level,
+            inv.last_updated
         FROM inventory inv
-        INNER JOIN stores s   ON inv.store_id = s.store_id
+        INNER JOIN stores s ON inv.store_id = s.store_id
         INNER JOIN products p ON inv.product_id = p.product_id
-        WHERE inv.qty_on_hand < inv.reorder_level
-        ORDER BY inv.qty_on_hand ASC
+        WHERE inv.stock_quantity < p.recorder_level
+        ORDER BY inv.stock_quantity ASC
     """)
 
 
 def get_inventory_summary():
+    """Total stock and low stock counts by category."""
     return run_query("""
         SELECT
-            c.category_name,
-            SUM(inv.qty_on_hand) AS total_stock,
-            AVG(inv.qty_on_hand) AS avg_stock,
-            SUM(CASE WHEN inv.qty_on_hand < inv.reorder_level THEN 1 ELSE 0 END) AS low_stock_count
+            p.category AS category_name,
+            SUM(inv.stock_quantity) AS total_stock,
+            SUM(CASE WHEN inv.stock_quantity < p.recorder_level THEN 1 ELSE 0 END) AS low_stock_count
         FROM inventory inv
-        INNER JOIN products p   ON inv.product_id = p.product_id
-        INNER JOIN categories c ON p.category_id = c.category_id
-        GROUP BY c.category_name
+        INNER JOIN products p ON inv.product_id = p.product_id
+        GROUP BY p.category
         ORDER BY total_stock DESC
     """)

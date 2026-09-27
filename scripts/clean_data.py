@@ -1,115 +1,64 @@
-# clean_data.py - Reads raw CSVs, cleans them, validates, and saves to data/processed/
+# clean_data.py - Cleans raw CSVs and saves to data/processed/
 
 import sys
 from pathlib import Path
-
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.cleaning import (
-    clean_categories, clean_customers, clean_inventory,
-    clean_order_items, clean_orders, clean_products, clean_stores,
+    clean_customers, clean_stores, clean_products,
+    clean_orders, clean_order_items, clean_inventory
 )
-from src.validation import run_all_validations
 
-RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
-PROCESSED_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
+RAW_DIR = PROJECT_ROOT / "data" / "raw"
+PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_raw(name):
-    path = RAW_DIR / f"{name}.csv"
-    if not path.exists():
-        print(f"  ERROR: {path} not found. Run generate_data.py first.")
-        sys.exit(1)
-    return pd.read_csv(path)
+def run_cleaning():
+    print("Reading and cleaning data...")
+
+    # 1. Customers
+    cust_df = clean_customers(pd.read_csv(RAW_DIR / "Customers.csv"))
+    cust_df.to_csv(PROCESSED_DIR / "Customers.csv", index=False)
+    print(f"  Cleaned Customers: {len(cust_df)} rows")
+
+    # 2. Stores
+    store_df = clean_stores(pd.read_csv(RAW_DIR / "stores.csv"))
+    store_df.to_csv(PROCESSED_DIR / "stores.csv", index=False)
+    print(f"  Cleaned stores: {len(store_df)} rows")
+
+    # 3. Products
+    prod_df = clean_products(pd.read_csv(RAW_DIR / "products.csv"))
+    prod_df.to_csv(PROCESSED_DIR / "products.csv", index=False)
+    print(f"  Cleaned products: {len(prod_df)} rows")
+
+    # 4. Orders (must reference existing customers and stores)
+    ord_df = clean_orders(pd.read_csv(RAW_DIR / "orders.csv"))
+    valid_cids = set(cust_df["Customer_Id"])
+    valid_sids = set(store_df["store_id"])
+    ord_df = ord_df[ord_df["Customer_id"].isin(valid_cids) & ord_df["store_id"].isin(valid_sids)]
+    ord_df.to_csv(PROCESSED_DIR / "orders.csv", index=False)
+    print(f"  Cleaned orders: {len(ord_df)} rows")
+
+    # 5. Order Items (must reference existing orders and products)
+    item_df = clean_order_items(pd.read_csv(RAW_DIR / "order_items.csv"))
+    valid_oids = set(ord_df["order_id"])
+    valid_pids = set(prod_df["product_id"])
+    item_df = item_df[item_df["order_id"].isin(valid_oids) & item_df["product_id"].isin(valid_pids)]
+    item_df.to_csv(PROCESSED_DIR / "order_items.csv", index=False)
+    print(f"  Cleaned order_items: {len(item_df)} rows")
+
+    # 6. Inventory (must reference existing stores and products)
+    inv_df = clean_inventory(pd.read_csv(RAW_DIR / "inventory.csv"))
+    inv_df = inv_df[inv_df["store_id"].isin(valid_sids) & inv_df["product_id"].isin(valid_pids)]
+    inv_df.to_csv(PROCESSED_DIR / "inventory.csv", index=False)
+    print(f"  Cleaned inventory: {len(inv_df)} rows")
+
+    print("\nAll cleaned CSVs saved to data/processed/")
 
 
 if __name__ == "__main__":
-    print("Loading raw data...")
-
-    raw = {
-        "customers":   load_raw("customers"),
-        "categories":  load_raw("categories"),
-        "products":    load_raw("products"),
-        "stores":      load_raw("stores"),
-        "orders":      load_raw("orders"),
-        "order_items": load_raw("order_items"),
-        "inventory":   load_raw("inventory"),
-    }
-
-    for name, df in raw.items():
-        print(f"  Raw {name}: {len(df)} rows")
-
-    # Clean each table
-    print()
-    print("Cleaning...")
-
-    cleaned = {
-        "customers":   clean_customers(raw["customers"]),
-        "categories":  clean_categories(raw["categories"]),
-        "products":    clean_products(raw["products"]),
-        "stores":      clean_stores(raw["stores"]),
-        "orders":      clean_orders(raw["orders"]),
-        "order_items": clean_order_items(raw["order_items"]),
-        "inventory":   clean_inventory(raw["inventory"]),
-    }
-
-    # Filter out rows with invalid foreign keys
-    valid_order_ids = set(cleaned["orders"]["order_id"])
-    valid_product_ids = set(cleaned["products"]["product_id"])
-    valid_store_ids = set(cleaned["stores"]["store_id"])
-    valid_customer_ids = set(cleaned["customers"]["customer_id"])
-
-    cleaned["orders"] = cleaned["orders"][
-        cleaned["orders"]["customer_id"].isin(valid_customer_ids)
-        & cleaned["orders"]["store_id"].isin(valid_store_ids)
-    ]
-    valid_order_ids = set(cleaned["orders"]["order_id"])
-
-    cleaned["order_items"] = cleaned["order_items"][
-        cleaned["order_items"]["order_id"].isin(valid_order_ids)
-        & cleaned["order_items"]["product_id"].isin(valid_product_ids)
-    ]
-    cleaned["inventory"] = cleaned["inventory"][
-        cleaned["inventory"]["store_id"].isin(valid_store_ids)
-        & cleaned["inventory"]["product_id"].isin(valid_product_ids)
-    ]
-
-    # Reset IDs
-    cleaned["order_items"] = cleaned["order_items"].reset_index(drop=True)
-    cleaned["order_items"]["item_id"] = range(1, len(cleaned["order_items"]) + 1)
-
-    cleaned["inventory"] = cleaned["inventory"].reset_index(drop=True)
-    cleaned["inventory"]["inventory_id"] = range(1, len(cleaned["inventory"]) + 1)
-
-    for name, df in cleaned.items():
-        print(f"  Cleaned {name}: {len(df)} rows")
-
-    # Validate
-    print()
-    print("Validating...")
-
-    results = run_all_validations(
-        cleaned["customers"], cleaned["categories"], cleaned["products"],
-        cleaned["stores"], cleaned["orders"], cleaned["order_items"],
-        cleaned["inventory"],
-    )
-
-    all_ok = True
-    for table, issues in results.items():
-        if issues:
-            all_ok = False
-            for iss in issues:
-                print(f"  WARNING: {iss}")
-        else:
-            print(f"  {table} - OK")
-
-    # Save cleaned CSVs
-    print()
-    for name, df in cleaned.items():
-        out_path = PROCESSED_DIR / f"{name}.csv"
-        df.to_csv(out_path, index=False)
-
-    print("Done! Cleaned CSVs saved to data/processed/")
+    run_cleaning()

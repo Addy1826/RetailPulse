@@ -21,7 +21,7 @@ top = get_top_products(15)
 
 fig = px.bar(
     top.sort_values("revenue", ascending=True),
-    x="revenue", y="product_name", orientation="h", color="brand",
+    x="revenue", y="product_name", orientation="h", color="category",
     title="Top 15 Products by Revenue",
     color_discrete_sequence=px.colors.qualitative.Set2,
 )

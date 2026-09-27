@@ -16,35 +16,35 @@ st.markdown("# 👥 Customer Insights")
 st.markdown("Segments, lifetime value, and payment preferences.")
 st.markdown("---")
 
-# Segments
+# Segments / Cities
 segments = get_customer_segments()
 col1, col2 = st.columns(2)
 
 with col1:
-    fig = go.Figure(go.Bar(
-        x=segments["segment"], y=segments["revenue"],
-        marker=dict(color=["#7b2ff7", "#00d2ff", "#ffa94d"]),
-        text=segments["revenue"].apply(lambda x: f"₹{x:,.0f}"),
-        textposition="outside",
-    ))
+    fig = px.bar(
+        segments, x="segment", y="revenue",
+        title="Revenue by City",
+        color="segment", text_auto=",.0f",
+        color_discrete_sequence=px.colors.qualitative.Plotly,
+    )
     fig.update_layout(
-        title="Revenue by Segment",
         template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
-        height=380, yaxis_title="Revenue (₹)",
+        height=380, yaxis_title="Revenue (₹)", xaxis_title="City",
+        showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    fig2 = go.Figure(go.Bar(
-        x=segments["segment"], y=segments["revenue_per_customer"],
-        marker=dict(color=["#7b2ff7", "#00d2ff", "#ffa94d"]),
-        text=segments["revenue_per_customer"].apply(lambda x: f"₹{x:,.0f}"),
-        textposition="outside",
-    ))
+    fig2 = px.bar(
+        segments, x="segment", y="revenue_per_customer",
+        title="Revenue per Customer by City",
+        color="segment", text_auto=",.0f",
+        color_discrete_sequence=px.colors.qualitative.Plotly,
+    )
     fig2.update_layout(
-        title="Revenue per Customer",
         template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
-        height=380, yaxis_title="₹ per Customer",
+        height=380, yaxis_title="₹ per Customer", xaxis_title="City",
+        showlegend=False,
     )
     st.plotly_chart(fig2, use_container_width=True)
 

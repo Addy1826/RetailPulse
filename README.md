@@ -119,25 +119,24 @@ Covers: data generation checks, cleaning logic, validation rules, database integ
 
 ## 📊 Database Schema
 
-7 normalized tables with proper FK relationships:
+6 normalized tables with foreign key relationships:
 
 ```
-customers ──┐
-             ├──→ orders ──→ order_items ←── products ←── categories
-stores ──────┘                                  │
-                                                ↓
-                                           inventory
+Customers ──┐
+             ├──→ orders ──→ order_items ←── products
+stores ──────┘                     │
+                                   ↓
+                               inventory
 ```
 
-| Table | Rows | Description |
-|-------|------|-------------|
-| `customers` | ~500 | Customer profiles with segments |
-| `categories` | 10 | Product category hierarchy |
-| `products` | 120 | Catalog with pricing and SKUs |
-| `stores` | 15 | Physical + online store locations |
-| `orders` | ~5,000 | Transaction headers |
-| `order_items` | ~14,500 | Line items with computed totals |
-| `inventory` | ~1,300 | Stock levels per store × product |
+| Table | Description |
+|-------|-------------|
+| `Customers` | Customer profiles (id, name, email, city, signup date) |
+| `stores` | Store locations and opening dates |
+| `products` | Product catalog with category, unit price, and reorder levels |
+| `orders` | Transaction headers (date, payment method, order status) |
+| `order_items` | Line items with quantity and selling price |
+| `inventory` | Stock quantity per store and product |
 
 ---
 

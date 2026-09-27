@@ -1,90 +1,85 @@
-# cleaning.py - Cleans raw CSV data using pandas
+# cleaning.py - Data cleaning functions for RetailPulse
 
-import numpy as np
 import pandas as pd
 
 
-def strip_and_fix(df):
-    """Strip whitespace and replace placeholder values like 'N/A' with NaN."""
-    str_cols = df.select_dtypes(include=["object", "str"]).columns
-    df[str_cols] = df[str_cols].apply(lambda s: s.str.strip())
-    df = df.replace({"": np.nan, "N/A": np.nan, "n/a": np.nan,
-                     "NA": np.nan, "null": np.nan, "None": np.nan,
-                     "none": np.nan, "  ": np.nan})
-    return df
-
-
 def clean_customers(df):
-    df = strip_and_fix(df)
-    df = df.drop_duplicates(subset=["email"], keep="first")
-    df["first_name"] = df["first_name"].fillna("Unknown")
-    df["join_date"] = pd.to_datetime(df["join_date"], errors="coerce")
-    df = df.dropna(subset=["join_date"])
+    """Clean customers data."""
+    df = df.copy()
+    # Strip whitespace from string columns
+    for col in ["Customer_name", "email", "city"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
 
-    valid_segments = {"Regular", "Premium", "VIP"}
-    df["segment"] = df["segment"].where(df["segment"].isin(valid_segments), "Regular")
+    # Drop duplicate customers
+    df = df.drop_duplicates(subset=["Customer_Id"])
+    df = df.drop_duplicates(subset=["email"])
 
-    df = df.reset_index(drop=True)
-    df["customer_id"] = range(1, len(df) + 1)
-    return df
-
-
-def clean_categories(df):
-    df = strip_and_fix(df)
-    df = df.drop_duplicates(subset=["category_name"], keep="first")
-    df = df.dropna(subset=["category_name"])
-    return df
-
-
-def clean_products(df):
-    df = strip_and_fix(df)
-    df = df.drop_duplicates(subset=["sku"], keep="first")
-
-    # Cap outlier prices at the 98th percentile
-    price_cap = df["unit_price"].quantile(0.98)
-    df["unit_price"] = df["unit_price"].clip(upper=price_cap)
-
-    # Make sure cost is always less than selling price
-    df.loc[df["cost_price"] >= df["unit_price"], "cost_price"] = df["unit_price"] * 0.6
-    df["cost_price"] = df["cost_price"].round(2)
-    df["is_active"] = df["is_active"].fillna(1).astype(int)
-    return df
+    # Ensure valid signup dates
+    df["signup_date"] = pd.to_datetime(df["signup_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    return df.dropna(subset=["Customer_Id", "Customer_name"])
 
 
 def clean_stores(df):
-    df = strip_and_fix(df)
-    df = df.drop_duplicates(subset=["store_id"], keep="first")
-    df["open_date"] = pd.to_datetime(df["open_date"], errors="coerce")
-    df = df.dropna(subset=["open_date", "city", "state"])
-    return df
+    """Clean stores data."""
+    df = df.copy()
+    for col in ["store_name", "city"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+
+    df = df.drop_duplicates(subset=["store_id"])
+    df["openinig_date"] = pd.to_datetime(df["openinig_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    return df.dropna(subset=["store_id", "store_name"])
+
+
+def clean_products(df):
+    """Clean products data."""
+    df = df.copy()
+    for col in ["product_name", "category"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+
+    df = df.drop_duplicates(subset=["product_id"])
+    # Ensure positive unit price
+    df["Unit_price"] = pd.to_numeric(df["Unit_price"], errors="coerce")
+    df = df[df["Unit_price"] > 0]
+    df["recorder_level"] = df["recorder_level"].fillna(10).astype(int)
+    return df.dropna(subset=["product_id", "product_name"])
 
 
 def clean_orders(df):
-    df = strip_and_fix(df)
-    df = df.drop_duplicates(subset=["order_id"], keep="first")
-    df["order_date"] = pd.to_datetime(df["order_date"], errors="coerce")
-    df = df.dropna(subset=["order_date"])
+    """Clean orders data."""
+    df = df.copy()
+    df = df.drop_duplicates(subset=["order_id"])
 
-    valid_statuses = {"Completed", "Returned", "Cancelled"}
-    df["status"] = df["status"].where(df["status"].isin(valid_statuses), "Completed")
-    df["total_amount"] = pd.to_numeric(df["total_amount"], errors="coerce").fillna(0)
-    return df
+    valid_statuses = ["Completed", "Cancelled", "Returned"]
+    df["order_status"] = df["order_status"].apply(lambda s: s if s in valid_statuses else "Completed")
+
+    df["Order_date"] = pd.to_datetime(df["Order_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    return df.dropna(subset=["order_id", "Customer_id", "store_id"])
 
 
 def clean_order_items(df):
-    df = strip_and_fix(df)
-    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
-    df = df.dropna(subset=["quantity"])
-    df["quantity"] = df["quantity"].astype(int).clip(lower=1)
-    df["unit_price"] = pd.to_numeric(df["unit_price"], errors="coerce").fillna(0)
-    df["discount_pct"] = pd.to_numeric(df["discount_pct"], errors="coerce").fillna(0)
-    return df
+    """Clean order items data."""
+    df = df.copy()
+    # Primary key is (order_id, product_id)
+    df = df.drop_duplicates(subset=["order_id", "product_id"])
+
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(1).astype(int)
+    df["selling_price"] = pd.to_numeric(df["selling_price"], errors="coerce")
+
+    # Only keep positive values
+    df = df[(df["quantity"] > 0) & (df["selling_price"] > 0)]
+    return df.dropna(subset=["order_id", "product_id"])
 
 
 def clean_inventory(df):
-    df = strip_and_fix(df)
-    df = df.drop_duplicates(subset=["store_id", "product_id"], keep="first")
-    df["qty_on_hand"] = pd.to_numeric(df["qty_on_hand"], errors="coerce").fillna(0).astype(int)
-    df["reorder_level"] = pd.to_numeric(df["reorder_level"], errors="coerce").fillna(10).astype(int)
-    df["last_restock"] = pd.to_datetime(df["last_restock"], errors="coerce")
-    return df
+    """Clean inventory data."""
+    df = df.copy()
+    # Primary key is (store_id, product_id)
+    df = df.drop_duplicates(subset=["store_id", "product_id"])
+
+    df["stock_quantity"] = pd.to_numeric(df["stock_quantity"], errors="coerce").fillna(0).astype(int)
+    df = df[df["stock_quantity"] >= 0]
+    df["last_updated"] = pd.to_datetime(df["last_updated"], errors="coerce").dt.strftime("%Y-%m-%d")
+    return df.dropna(subset=["store_id", "product_id"])

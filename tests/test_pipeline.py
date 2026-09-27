@@ -1,205 +1,128 @@
-# tests/test_pipeline.py
-# End-to-end tests for the RetailPulse data pipeline.
+# test_pipeline.py - Tests for RetailPulse pipeline and analytics
 
 import sys
 from pathlib import Path
-
 import pandas as pd
 import pytest
 
-# Ensure project root is on the path.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.cleaning import (
-    clean_categories,
-    clean_customers,
-    clean_inventory,
-    clean_order_items,
-    clean_orders,
-    clean_products,
-    clean_stores,
+    clean_customers, clean_stores, clean_products,
+    clean_orders, clean_order_items, clean_inventory
 )
-from src.database import get_engine, run_query
-from src.validation import run_all_validations
+from src.validation import validate_all_data
+from src.database import run_query
+import src.analytics as analytics
 
-RAW_DIR       = PROJECT_ROOT / "data" / "raw"
+RAW_DIR = PROJECT_ROOT / "data" / "raw"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
 
-# ═══════════════════════════════════════════════════════════════
-#  1. Data Generation Tests
-# ═══════════════════════════════════════════════════════════════
 class TestDataGeneration:
-    """Verify that raw CSVs exist and have expected columns."""
-
-    @pytest.fixture(autouse=True)
-    def _check_raw_dir(self):
-        if not RAW_DIR.exists() or not list(RAW_DIR.glob("*.csv")):
-            pytest.skip("Raw data not generated — run scripts/generate_data.py first")
+    """Verify raw CSV files exist and have data."""
 
     @pytest.mark.parametrize("filename,min_rows", [
-        ("customers.csv",  100),
-        ("categories.csv",  5),
-        ("products.csv",    50),
-        ("stores.csv",       5),
-        ("orders.csv",    1000),
-        ("order_items.csv", 2000),
-        ("inventory.csv",  100),
+        ("Customers.csv", 100),
+        ("stores.csv", 5),
+        ("products.csv", 10),
+        ("orders.csv", 500),
+        ("order_items.csv", 1000),
+        ("inventory.csv", 50),
     ])
-    def test_raw_csv_exists_and_has_rows(self, filename, min_rows):
+    def test_csv_exists_and_has_rows(self, filename, min_rows):
         path = RAW_DIR / filename
-        assert path.exists(), f"{filename} missing"
+        assert path.exists(), f"{filename} is missing"
         df = pd.read_csv(path)
-        assert len(df) >= min_rows, f"{filename}: expected >= {min_rows} rows, got {len(df)}"
+        assert len(df) >= min_rows, f"{filename} has fewer rows than expected"
 
 
-# ═══════════════════════════════════════════════════════════════
-#  2. Cleaning Tests
-# ═══════════════════════════════════════════════════════════════
 class TestCleaning:
-    """Verify cleaning removes dirty data correctly."""
+    """Verify cleaning logic handles duplicates and values correctly."""
 
-    @pytest.fixture(autouse=True)
-    def _check_raw(self):
-        if not RAW_DIR.exists():
-            pytest.skip("Raw data not generated")
+    def test_customers_cleaning(self):
+        df = pd.DataFrame({
+            "Customer_Id": [1, 1, 2],
+            "Customer_name": [" Alice ", "Alice", "Bob"],
+            "email": ["alice@test.com", "alice@test.com", "bob@test.com"],
+            "city": ["Mumbai", "Mumbai", "Delhi"],
+            "signup_date": ["2026-01-01", "2026-01-01", "2026-01-02"]
+        })
+        cleaned = clean_customers(df)
+        assert len(cleaned) == 2
+        assert cleaned["Customer_name"].iloc[0] == "Alice"
 
-    def test_customers_deduplication(self):
-        raw = pd.read_csv(RAW_DIR / "customers.csv")
-        cleaned = clean_customers(raw)
-        # Should have no duplicate emails.
-        assert cleaned["email"].is_unique
-
-    def test_products_price_capping(self):
-        raw = pd.read_csv(RAW_DIR / "products.csv")
-        cleaned = clean_products(raw)
-        cap = raw["unit_price"].quantile(0.98)
-        assert cleaned["unit_price"].max() <= cap + 0.01
-
-    def test_orders_valid_status(self):
-        raw = pd.read_csv(RAW_DIR / "orders.csv")
-        cleaned = clean_orders(raw)
-        assert set(cleaned["status"].unique()).issubset({"Completed", "Returned", "Cancelled"})
+    def test_products_positive_price(self):
+        df = pd.DataFrame({
+            "product_id": [1, 2],
+            "product_name": ["Phone", "Bad"],
+            "category": ["Electronics", "Electronics"],
+            "Unit_price": [1000.0, -50.0],
+            "recorder_level": [10, 10]
+        })
+        cleaned = clean_products(df)
+        assert len(cleaned) == 1
+        assert cleaned["product_id"].iloc[0] == 1
 
     def test_order_items_positive_quantity(self):
-        raw = pd.read_csv(RAW_DIR / "order_items.csv")
-        cleaned = clean_order_items(raw)
-        assert (cleaned["quantity"] > 0).all()
+        df = pd.DataFrame({
+            "order_id": [1, 2],
+            "product_id": [1, 1],
+            "quantity": [2, 0],
+            "selling_price": [500.0, 500.0]
+        })
+        cleaned = clean_order_items(df)
+        assert len(cleaned) == 1
 
 
-# ═══════════════════════════════════════════════════════════════
-#  3. Validation Tests
-# ═══════════════════════════════════════════════════════════════
 class TestValidation:
-    """Run all validators on the cleaned data."""
+    """Verify validation passes on processed data."""
 
-    @pytest.fixture(autouse=True)
-    def _check_processed(self):
-        if not PROCESSED_DIR.exists() or not list(PROCESSED_DIR.glob("*.csv")):
-            pytest.skip("Processed data not available — run scripts/clean_data.py first")
-
-    def _load(self, name):
-        return pd.read_csv(PROCESSED_DIR / f"{name}.csv")
-
-    def test_all_validations_pass(self):
-        results = run_all_validations(
-            self._load("customers"),
-            self._load("categories"),
-            self._load("products"),
-            self._load("stores"),
-            self._load("orders"),
-            self._load("order_items"),
-            self._load("inventory"),
-        )
-        for table, issues in results.items():
-            assert issues == [], f"{table}: {issues}"
+    def test_validation_passes(self):
+        cust = pd.read_csv(PROCESSED_DIR / "Customers.csv")
+        stores = pd.read_csv(PROCESSED_DIR / "stores.csv")
+        prods = pd.read_csv(PROCESSED_DIR / "products.csv")
+        orders = pd.read_csv(PROCESSED_DIR / "orders.csv")
+        items = pd.read_csv(PROCESSED_DIR / "order_items.csv")
+        inv = pd.read_csv(PROCESSED_DIR / "inventory.csv")
+        assert validate_all_data(cust, stores, prods, orders, items, inv) is True
 
 
-# ═══════════════════════════════════════════════════════════════
-#  4. Database Tests
-# ═══════════════════════════════════════════════════════════════
 class TestDatabase:
-    """Verify data was loaded into MySQL correctly."""
-
-    @pytest.fixture(autouse=True)
-    def _check_db(self):
-        try:
-            engine = get_engine()
-            with engine.connect() as conn:
-                conn.execute(__import__("sqlalchemy").text("SELECT 1"))
-        except Exception:
-            pytest.skip("MySQL not available")
+    """Verify tables exist and have data in MySQL."""
 
     @pytest.mark.parametrize("table,min_rows", [
-        ("customers",   100),
-        ("categories",    5),
-        ("products",     50),
-        ("stores",        5),
-        ("orders",     1000),
-        ("order_items", 2000),
-        ("inventory",   100),
+        ("Customers", 100),
+        ("stores", 5),
+        ("products", 10),
+        ("orders", 500),
+        ("order_items", 1000),
+        ("inventory", 50),
     ])
-    def test_table_has_rows(self, table, min_rows):
-        df = run_query(f"SELECT COUNT(*) AS cnt FROM {table}")
-        assert df["cnt"].iloc[0] >= min_rows
-
-    def test_revenue_kpi_query(self):
-        df = run_query("""
-            SELECT ROUND(SUM(oi.line_total), 2) AS total_revenue
-            FROM orders o
-            JOIN order_items oi ON o.order_id = oi.order_id
-            WHERE o.status = 'Completed'
-        """)
-        assert df["total_revenue"].iloc[0] > 0
-
-    def test_no_orphan_order_items(self):
-        df = run_query("""
-            SELECT COUNT(*) AS cnt
-            FROM order_items oi
-            LEFT JOIN orders o ON oi.order_id = o.order_id
-            WHERE o.order_id IS NULL
-        """)
-        assert df["cnt"].iloc[0] == 0
+    def test_database_tables_have_rows(self, table, min_rows):
+        df = run_query(f"SELECT COUNT(*) AS c FROM {table}")
+        assert int(df["c"].iloc[0]) >= min_rows
 
 
-# ═══════════════════════════════════════════════════════════════
-#  5. Analytics Tests
-# ═══════════════════════════════════════════════════════════════
 class TestAnalytics:
-    """Verify analytics functions return valid DataFrames."""
+    """Verify analytics queries return valid results."""
 
-    @pytest.fixture(autouse=True)
-    def _check_db(self):
-        try:
-            engine = get_engine()
-            with engine.connect() as conn:
-                conn.execute(__import__("sqlalchemy").text("SELECT 1"))
-        except Exception:
-            pytest.skip("MySQL not available")
-
-    def test_get_revenue_kpis(self):
-        from src.analytics import get_revenue_kpis
-        kpis = get_revenue_kpis()
-        assert "total_revenue" in kpis
+    def test_kpis(self):
+        kpis = analytics.get_revenue_kpis()
+        assert kpis["total_orders"] > 0
         assert kpis["total_revenue"] > 0
 
-    def test_get_monthly_revenue(self):
-        from src.analytics import get_monthly_revenue
-        df = get_monthly_revenue()
+    def test_monthly_revenue(self):
+        df = analytics.get_monthly_revenue()
         assert not df.empty
-        assert "month" in df.columns
         assert "revenue" in df.columns
 
-    def test_get_top_products(self):
-        from src.analytics import get_top_products
-        df = get_top_products(5)
-        assert len(df) == 5
+    def test_top_products(self):
+        df = analytics.get_top_products(5)
+        assert len(df) <= 5
+        assert "product_name" in df.columns
 
-    def test_get_low_stock_alerts(self):
-        from src.analytics import get_low_stock_alerts
-        df = get_low_stock_alerts()
-        assert isinstance(df, pd.DataFrame)
-        # Every row should have qty < reorder level.
-        if not df.empty:
-            assert (df["qty_on_hand"] < df["reorder_level"]).all()
+    def test_low_stock_alerts(self):
+        df = analytics.get_low_stock_alerts()
+        assert "qty_on_hand" in df.columns

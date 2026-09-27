@@ -1,266 +1,172 @@
-# generate_data.py - Creates fake retail data as CSVs
-# Adds some messy data on purpose so cleaning has something to fix
+# generate_data.py - Creates sample data for RetailPulse
+# Tables: Customers, stores, products, orders, order_items, inventory
 
 import csv
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
-
-import numpy as np
 from faker import Faker
 
 fake = Faker("en_IN")
-Faker.seed(42)
 random.seed(42)
-np.random.seed(42)
 
-RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RAW_DIR = PROJECT_ROOT / "data" / "raw"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-# How much data to generate
-N_CUSTOMERS = 500
-N_CATEGORIES = 10
-N_PRODUCTS = 120
-N_STORES = 15
-N_ORDERS = 5000
-MAX_ITEMS = 5
+# Common Indian cities
+CITIES = ["Mumbai", "Delhi", "Bengaluru", "Hyderabad", "Chennai", "Kolkata", "Pune", "Ahmedabad", "Jaipur", "Lucknow"]
 
-# Indian cities and states
-STATES_CITIES = {
-    "Maharashtra":   ["Mumbai", "Pune", "Nagpur"],
-    "Karnataka":     ["Bengaluru", "Mysuru", "Hubli"],
-    "Delhi":         ["New Delhi"],
-    "Tamil Nadu":    ["Chennai", "Coimbatore"],
-    "Telangana":     ["Hyderabad", "Warangal"],
-    "West Bengal":   ["Kolkata", "Howrah"],
-    "Gujarat":       ["Ahmedabad", "Surat", "Vadodara"],
-    "Uttar Pradesh": ["Lucknow", "Noida", "Kanpur"],
-    "Rajasthan":     ["Jaipur", "Udaipur"],
-    "Kerala":        ["Kochi", "Thiruvananthapuram"],
+# Categories and sample products
+CATEGORIES = {
+    "Electronics": ["Smartphone", "Wireless Earbuds", "Laptop", "Smartwatch", "Bluetooth Speaker", "Tablet", "Power Bank"],
+    "Clothing": ["Cotton T-Shirt", "Slim Fit Jeans", "Denim Jacket", "Formal Shirt", "Ethnic Kurta", "Hoodie", "Track Pants"],
+    "Footwear": ["Running Shoes", "Leather Formal Shoes", "Casual Sneakers", "Sports Sandals", "Slip-on Loafers"],
+    "Home & Kitchen": ["Mixer Grinder", "Non-Stick Cookware Set", "Water Purifier", "Electric Kettle", "Stainless Steel Bottle"],
+    "Groceries": ["Organic Green Tea", "Almonds 500g", "Basmati Rice 5kg", "Virgin Olive Oil", "Dark Chocolate Bar"]
 }
 
-REGIONS_MAP = {
-    "Maharashtra": "West", "Gujarat": "West", "Rajasthan": "West",
-    "Karnataka": "South", "Tamil Nadu": "South", "Telangana": "South", "Kerala": "South",
-    "Delhi": "North", "Uttar Pradesh": "North",
-    "West Bengal": "East",
-}
-
-CATEGORIES = [
-    ("Electronics",     "Phones, laptops, tablets, accessories"),
-    ("Clothing",        "Men's, women's, and kids' apparel"),
-    ("Footwear",        "Shoes, sandals, sneakers"),
-    ("Home & Kitchen",  "Cookware, decor, furnishings"),
-    ("Beauty & Health", "Skincare, haircare, supplements"),
-    ("Sports & Fitness","Equipment, sportswear, yoga"),
-    ("Books",           "Fiction, non-fiction, academic"),
-    ("Toys & Games",    "Board games, puzzles, action figures"),
-    ("Grocery",         "Staples, snacks, beverages"),
-    ("Stationery",      "Notebooks, pens, art supplies"),
-]
-
-BRANDS = {
-    "Electronics":      ["Samsung", "Apple", "OnePlus", "boAt", "Realme"],
-    "Clothing":         ["Levi's", "Allen Solly", "H&M", "Zara", "FabIndia"],
-    "Footwear":         ["Nike", "Adidas", "Bata", "Puma", "Woodland"],
-    "Home & Kitchen":   ["Prestige", "Philips", "Milton", "Borosil", "IKEA"],
-    "Beauty & Health":  ["Lakme", "Nivea", "Himalaya", "Mamaearth", "WOW"],
-    "Sports & Fitness": ["Decathlon", "Nivia", "Yonex", "Cosco", "Boldfit"],
-    "Books":            ["Penguin", "HarperCollins", "Rupa", "Scholastic", "Oxford"],
-    "Toys & Games":     ["Funskool", "Lego", "Mattel", "Hasbro", "Toyzone"],
-    "Grocery":          ["Tata", "Amul", "Fortune", "Haldiram", "MTR"],
-    "Stationery":       ["Classmate", "Cello", "Faber-Castell", "Pilot", "Camlin"],
-}
-
-PAYMENT_METHODS = ["Credit Card", "Debit Card", "UPI", "Cash", "Wallet"]
-SEGMENTS = ["Regular", "Premium", "VIP"]
-STORE_TYPES = ["Flagship", "Mall", "Outlet", "Online"]
-ORDER_STATUSES = ["Completed", "Returned", "Cancelled"]
+PAYMENT_METHODS = ["UPI", "Credit Card", "Debit Card", "Cash", "Net Banking"]
+ORDER_STATUSES = ["Completed", "Completed", "Completed", "Completed", "Cancelled", "Returned"]
 
 
-def make_dirty(value, prob=0.03):
-    """Randomly corrupt a value to simulate messy data."""
-    if random.random() < prob:
-        return random.choice([None, "", "N/A", "  "])
-    return value
-
-
-def make_outlier_price(base, prob=0.02):
-    """Occasionally return an unrealistic price."""
-    if random.random() < prob:
-        return round(base * random.uniform(10, 50), 2)
-    return base
-
-
-def generate_customers():
+def generate_customers(n=500):
     rows = []
-    for i in range(1, N_CUSTOMERS + 1):
-        state = random.choice(list(STATES_CITIES))
-        city = random.choice(STATES_CITIES[state])
+    for cid in range(1, n + 1):
+        name = fake.name()
+        email = f"{name.lower().replace(' ', '.')}_{cid}@example.com"
+        city = random.choice(CITIES)
+        days_ago = random.randint(30, 730)
+        signup_date = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
         rows.append({
-            "customer_id": i,
-            "first_name": make_dirty(fake.first_name()),
-            "last_name": fake.last_name(),
-            "email": fake.ascii_email(),
-            "phone": make_dirty(fake.phone_number()),
+            "Customer_Id": cid,
+            "Customer_name": name,
+            "email": email,
             "city": city,
-            "state": state,
-            "join_date": fake.date_between("-3y", "today").isoformat(),
-            "segment": random.choice(SEGMENTS),
-        })
-    # Add some duplicate rows on purpose
-    for _ in range(int(N_CUSTOMERS * 0.02)):
-        dup = random.choice(rows).copy()
-        dup["customer_id"] = len(rows) + 1
-        rows.append(dup)
-    return rows
-
-
-def generate_categories():
-    return [
-        {"category_id": i + 1, "category_name": name, "description": desc}
-        for i, (name, desc) in enumerate(CATEGORIES)
-    ]
-
-
-def generate_products(categories):
-    rows = []
-    for i in range(1, N_PRODUCTS + 1):
-        cat = random.choice(categories)
-        cat_name = cat["category_name"]
-        base_price = round(random.uniform(99, 9999), 2)
-        cost = round(base_price * random.uniform(0.4, 0.75), 2)
-        rows.append({
-            "product_id": i,
-            "product_name": f"{random.choice(BRANDS[cat_name])} {fake.word().title()} {fake.word().title()}",
-            "category_id": cat["category_id"],
-            "brand": random.choice(BRANDS[cat_name]),
-            "unit_price": make_outlier_price(base_price),
-            "cost_price": cost,
-            "sku": f"SKU-{i:05d}",
-            "is_active": random.choices([1, 0], weights=[95, 5])[0],
+            "signup_date": signup_date
         })
     return rows
 
 
-def generate_stores():
+def generate_stores(n=10):
     rows = []
-    for i in range(1, N_STORES + 1):
-        state = random.choice(list(STATES_CITIES))
-        city = random.choice(STATES_CITIES[state])
+    for sid in range(1, n + 1):
+        city = CITIES[sid - 1] if sid <= len(CITIES) else random.choice(CITIES)
+        name = f"RetailPulse {city} Central"
+        days_ago = random.randint(100, 1000)
+        open_date = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
         rows.append({
-            "store_id": i,
-            "store_name": f"RetailPulse {city} {random.choice(STORE_TYPES)}",
+            "store_id": sid,
+            "store_name": name,
             "city": city,
-            "state": state,
-            "region": REGIONS_MAP[state],
-            "store_type": random.choice(STORE_TYPES),
-            "open_date": fake.date_between("-5y", "-1y").isoformat(),
+            "openinig_date": open_date
         })
     return rows
 
 
-def generate_orders_and_items(customers, stores, products):
-    orders, items = [], []
-    item_id = 1
-    cust_ids = [c["customer_id"] for c in customers]
-    store_ids = [s["store_id"] for s in stores]
-
-    for oid in range(1, N_ORDERS + 1):
-        odate = fake.date_time_between("-2y", "now")
-        status = random.choices(ORDER_STATUSES, weights=[85, 10, 5])[0]
-
-        order = {
-            "order_id": oid,
-            "customer_id": random.choice(cust_ids),
-            "store_id": random.choice(store_ids),
-            "order_date": odate.strftime("%Y-%m-%d %H:%M:%S"),
-            "status": make_dirty(status, prob=0.01),
-            "payment_method": random.choice(PAYMENT_METHODS),
-            "total_amount": 0.0,
-        }
-
-        n_items = random.randint(1, MAX_ITEMS)
-        order_total = 0.0
-
-        for _ in range(n_items):
-            prod = random.choice(products)
-            qty = random.randint(1, 4)
-            disc = round(random.choice([0, 0, 0, 5, 10, 15, 20, 25]), 2)
-            up = float(prod["unit_price"])
-            line = round(qty * up * (1 - disc / 100), 2)
-
-            items.append({
-                "item_id": item_id,
-                "order_id": oid,
-                "product_id": prod["product_id"],
-                "quantity": make_dirty(qty, prob=0.01),
-                "unit_price": up,
-                "discount_pct": disc,
+def generate_products():
+    rows = []
+    pid = 1
+    for cat, items in CATEGORIES.items():
+        for item in items:
+            unit_price = round(random.uniform(200, 15000), 2)
+            rows.append({
+                "product_id": pid,
+                "product_name": item,
+                "category": cat,
+                "Unit_price": unit_price,
+                "recorder_level": random.randint(10, 30)
             })
-            order_total += line
-            item_id += 1
+            pid += 1
+    return rows
 
-        order["total_amount"] = round(order_total, 2)
-        orders.append(order)
 
-    # Add a few duplicate orders
-    for _ in range(int(N_ORDERS * 0.01)):
-        dup = random.choice(orders).copy()
-        dup["order_id"] = len(orders) + 1
-        orders.append(dup)
+def generate_orders(num_orders=3000, num_customers=500, num_stores=10):
+    rows = []
+    for oid in range(1, num_orders + 1):
+        cid = random.randint(1, num_customers)
+        sid = random.randint(1, num_stores)
+        days_ago = random.randint(1, 365)
+        order_date = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+        pay_method = random.choice(PAYMENT_METHODS)
+        status = random.choice(ORDER_STATUSES)
+        rows.append({
+            "order_id": oid,
+            "Customer_id": cid,
+            "store_id": sid,
+            "Order_date": order_date,
+            "payment_method": pay_method,
+            "order_status": status
+        })
+    return rows
 
-    return orders, items
+
+def generate_order_items(orders, products):
+    rows = []
+    prod_dict = {p["product_id"]: p["Unit_price"] for p in products}
+    prod_ids = list(prod_dict.keys())
+
+    for ord_row in orders:
+        oid = ord_row["order_id"]
+        # 1 to 4 distinct items per order
+        num_items = random.randint(1, 4)
+        chosen_prods = random.sample(prod_ids, num_items)
+        for pid in chosen_prods:
+            qty = random.randint(1, 5)
+            # Selling price with small markup or discount
+            base_price = prod_dict[pid]
+            selling_price = round(base_price * random.uniform(0.9, 1.25), 2)
+            rows.append({
+                "order_id": oid,
+                "product_id": pid,
+                "quantity": qty,
+                "selling_price": selling_price
+            })
+    return rows
 
 
 def generate_inventory(stores, products):
     rows = []
-    inv_id = 1
     for s in stores:
-        subset = random.sample(products, k=random.randint(40, len(products)))
-        for p in subset:
+        sid = s["store_id"]
+        for p in products:
+            pid = p["product_id"]
+            qty = random.randint(0, 100)
+            days_ago = random.randint(1, 45)
+            last_up = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
             rows.append({
-                "inventory_id": inv_id,
-                "store_id": s["store_id"],
-                "product_id": p["product_id"],
-                "qty_on_hand": random.randint(0, 200),
-                "reorder_level": random.choice([5, 10, 15, 20, 25]),
-                "last_restock": make_dirty(
-                    fake.date_between("-6m", "today").isoformat(), prob=0.05
-                ),
+                "store_id": sid,
+                "product_id": pid,
+                "stock_quantity": qty,
+                "last_updated": last_up
             })
-            inv_id += 1
     return rows
 
 
-def write_csv(rows, filename):
-    path = RAW_DIR / filename
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+def save_csv(data, filename):
+    filepath = RAW_DIR / filename
+    if not data:
+        return
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
-        writer.writerows(rows)
-    print(f"  Saved {filename} ({len(rows)} rows)")
-    return path
+        writer.writerows(data)
+    print(f"Generated {filename}: {len(data)} rows")
 
 
 if __name__ == "__main__":
-    print("Generating raw data...")
-    print()
-
-    customers = generate_customers()
-    categories = generate_categories()
-    products = generate_products(categories)
-    stores = generate_stores()
-    orders, items = generate_orders_and_items(customers, stores, products)
+    print("Generating raw retail data...")
+    customers = generate_customers(500)
+    stores = generate_stores(10)
+    products = generate_products()
+    orders = generate_orders(3000, len(customers), len(stores))
+    order_items = generate_order_items(orders, products)
     inventory = generate_inventory(stores, products)
 
-    write_csv(customers,  "customers.csv")
-    write_csv(categories, "categories.csv")
-    write_csv(products,   "products.csv")
-    write_csv(stores,     "stores.csv")
-    write_csv(orders,     "orders.csv")
-    write_csv(items,      "order_items.csv")
-    write_csv(inventory,  "inventory.csv")
-
-    print()
-    print("Done! Raw CSVs saved to data/raw/")
+    save_csv(customers, "Customers.csv")
+    save_csv(stores, "stores.csv")
+    save_csv(products, "products.csv")
+    save_csv(orders, "orders.csv")
+    save_csv(order_items, "order_items.csv")
+    save_csv(inventory, "inventory.csv")
+    print("Done generating raw data!")
