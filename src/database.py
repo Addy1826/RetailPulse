@@ -1,30 +1,73 @@
-# database.py - Handles MySQL connection and running queries
+# database.py - Handles database connection and running queries
+# Connects to MySQL locally; automatically falls back to SQLite for cloud deployment.
 
 import os
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 
 # Load .env from project root
-env_path = Path(__file__).resolve().parents[1] / ".env"
-load_dotenv(env_path)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
+
+SQLITE_PATH = PROJECT_ROOT / "data" / "retailpulse.db"
+
+
+def _sqlite_setup(conn, record):
+    """Register MySQL-compatible helper functions in SQLite."""
+    def date_format(val, fmt):
+        if val is None:
+            return ""
+        return pd.to_datetime(val).strftime(fmt.replace("%%", "%"))
+
+    def dayname(val):
+        if val is None:
+            return ""
+        return pd.to_datetime(val).strftime("%A")
+
+    def dayofweek(val):
+        if val is None:
+            return 1
+        # MySQL DAYOFWEEK: 1=Sunday, 2=Monday, ..., 7=Saturday
+        return ((pd.to_datetime(val).dayofweek + 1) % 7) + 1
+
+    conn.create_function("DATE_FORMAT", 2, date_format)
+    conn.create_function("DAYNAME", 1, dayname)
+    conn.create_function("DAYOFWEEK", 1, dayofweek)
 
 
 def get_engine():
-    """Create and return a SQLAlchemy engine for MySQL."""
+    """Create and return a SQLAlchemy engine for MySQL, or SQLite fallback."""
+    if hasattr(get_engine, "_engine") and get_engine._engine is not None:
+        return get_engine._engine
+
     user = os.getenv("DB_USER", "root")
     pwd = os.getenv("DB_PASSWORD", "")
     host = os.getenv("DB_HOST", "localhost")
     port = os.getenv("DB_PORT", "3306")
     db = os.getenv("DB_NAME", "retailpulse")
 
-    url = f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}"
+    mysql_url = f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}"
 
-    if not hasattr(get_engine, "_engine"):
-        get_engine._engine = create_engine(url, pool_pre_ping=True)
-    return get_engine._engine
+    # Try MySQL first
+    try:
+        mysql_engine = create_engine(mysql_url, pool_pre_ping=True)
+        with mysql_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        get_engine._engine = mysql_engine
+        return get_engine._engine
+    except Exception:
+        # Fall back to SQLite for Streamlit Cloud deployment
+        if not SQLITE_PATH.exists():
+            # Build database if not present
+            from scripts.build_sqlite_db import DB_PATH  # noqa: F401
+        sqlite_engine = create_engine(f"sqlite:///{SQLITE_PATH.as_posix()}")
+        event.listen(sqlite_engine, "connect", _sqlite_setup)
+        get_engine._engine = sqlite_engine
+        return get_engine._engine
 
 
 def run_query(sql, params=None):
@@ -54,8 +97,8 @@ def run_script(sql_path):
 
 
 def load_dataframe(df, table, if_exists="append"):
-    """Load a pandas DataFrame into a MySQL table."""
+    """Load a pandas DataFrame into the database table."""
     engine = get_engine()
     rows = df.to_sql(table, engine, if_exists=if_exists, index=False,
-                     method="multi", chunksize=500)
+                     chunksize=500)
     return rows if rows else len(df)
